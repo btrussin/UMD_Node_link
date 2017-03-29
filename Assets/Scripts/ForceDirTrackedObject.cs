@@ -56,9 +56,10 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
     void Update () {
 
         // update the device ray per frame
-        deviceRay.origin = transform.position;
         Quaternion rayRotation = Quaternion.AngleAxis(60.0f, transform.right);
         deviceRay.direction = rayRotation * transform.forward;
+
+        deviceRay.origin = transform.position + deviceRay.direction * 0.07f;
 
 
         handleStateChanges();
@@ -170,10 +171,23 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
                     if (info != null)
                     {
                         info.positionIsStationary = false;
+                        info.interState = NodeInteractionState.NONE;
+                        fDirScript.numHighlighed--;
                     }
 
                     currNodeSelected = null;
                 }
+            }
+
+            if ((state.ulButtonPressed & SteamVR_Controller.ButtonMask.Grip) != 0 &&
+                (prevState.ulButtonPressed & SteamVR_Controller.ButtonMask.Grip) == 0)
+            {
+                fDirScript.grabSphereWithObject(gameObject);
+            }
+            else if ((state.ulButtonPressed & SteamVR_Controller.ButtonMask.Grip) == 0 &&
+                     (prevState.ulButtonPressed & SteamVR_Controller.ButtonMask.Grip) != 0)
+            {
+                fDirScript.releaseSphereWithObject(gameObject);
             }
 
 
@@ -181,9 +195,24 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
             prevState = state;
         }
 
-       
 
-       
+        if ((state.ulButtonPressed & SteamVR_Controller.ButtonMask.Touchpad) != 0 )
+        {
+            float h = state.rAxis0.x;
+            float v = state.rAxis0.y;
+
+            if( Mathf.Abs(h) > Mathf.Abs(v) )
+            {
+                fDirScript.rotateGraphHorizontal(h);
+            }
+            else
+            {
+                fDirScript.rotateGraphVertical(v);
+            }
+            
+        }
+
+
     }
 
     void calcSliderPosition()
@@ -224,6 +253,9 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
         if (info != null) {
             info.pos3d = pos;
             info.positionIsStationary = true;
+
+            info.interState = NodeInteractionState.HIGHLIGHTED;
+            fDirScript.numHighlighed++;
         }
     }
 
@@ -242,7 +274,7 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
 
         menuObject.transform.SetParent(gameObject.transform);
 
-        menuObject.transform.localPosition = new Vector3(0.00f, 0.01f, 0.05f);
+        menuObject.transform.localPosition = new Vector3(0.00f, 0.03f, 0.05f);
         menuObject.transform.localRotation = Quaternion.Euler(new Vector3(90.0f, 0.0f, 0.0f));
         menuObject.transform.localScale = new Vector3(0.25f, 0.25f, 1.0f);
 
@@ -254,4 +286,36 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
         menuActive = false;
         menuObject.SetActive(false);
     }
+
+
+
+
+
+
+
+
+    
+    void OnCollisionEnter(Collision col)
+    {
+        GameObject obj = col.gameObject;
+        NodeInfo info = fDirScript.getNodeInfo(obj.name);
+        if (info == null) return;
+        info.interState = NodeInteractionState.HIGHLIGHTED;
+        fDirScript.numHighlighed++;
+    }
+
+    void OnCollisionStay(Collision col)
+    {
+
+    }
+
+    void OnCollisionExit(Collision col)
+    {
+        GameObject obj = col.gameObject;
+        NodeInfo info = fDirScript.getNodeInfo(obj.name);
+        if (info == null) return;
+        info.interState = NodeInteractionState.NONE;
+        fDirScript.numHighlighed--;
+    }
+    
 }

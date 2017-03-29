@@ -9,6 +9,14 @@ public enum GraphLayout
     CYLINDER
 }
 
+public enum NodeInteractionState
+{
+    HIGHLIGHTED = 4,
+    SELECTED = 3,
+    DIM = 2,
+    NONE = 1
+}
+
 public class GraphGenerator : MonoBehaviour {
 
     public DataSourceType graphType;
@@ -40,20 +48,14 @@ public class GraphGenerator : MonoBehaviour {
     protected Dictionary<string, NodeInfo> nodeMap;
     protected List<LinkInfo> linkList;
 
-    
+
     string[] outlierNames = {
         "From Hell",
         "League of Extraordinary Gentlemen",
         "Watchmen",
         "Mystery Men"};
         
-    /*
-    string[] outlierNames = {
-        "5From Hell",
-        "5League of Extraordinary Gentlemen",
-        "5Watchmen",
-        "5Mystery Men"};
-        */
+
     // Use this for initialization
     void Start () {
 
@@ -508,6 +510,7 @@ public class NodeInfo
     public Color color;
     public Vector3 dir;
     public bool positionIsStationary = false;
+    public NodeInteractionState interState;
 }
 
 public class LinkInfo

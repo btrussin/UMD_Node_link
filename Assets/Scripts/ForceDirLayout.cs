@@ -4,24 +4,40 @@ using System.Collections.Generic;
 
 public class ForceDirLayout : GraphGenerator
 {
-    int numIter = 0;
-    float k = 1.0f;
+    public int numHighlighed = 0;
 
+    int numIter = 0;
+   
     float W = 2.0f;
     float L = 2.0f;
     float D = 2.0f;
 
+    
     float C1 = 0.1f;
     float C2 = 0.05f;
     float C3 = 0.05f;
     float C4 = 0.005f;
-
-    public float maxDistFromCenter;
+    
     public float gravityAmt = 0.0f;
     public bool updateForceLayout = true;
+    public int maxFramesForLayout = 1200;
+
+    ForceDirTrackedObject grabObject1 = null;
+    ForceDirTrackedObject grabObject2 = null;
+    ForceDirTrackedObject activeGrabObject = null;
+
+    Vector3 initialScale = Vector3.zero;
+    float initialDist = 0;
+    Quaternion initialRotation;
+    Vector3 inititalOffset = Vector3.zero;
+
+    bool activeScale = false;
+    bool activeMove = false;
 
     // Use this for initialization
     void Start () {
+        sphereCenter = gameObject.transform.position;
+
         NodeLinkDataLoader dataLoader = new NodeLinkDataLoader();
         dataLoader.srcType = DataSourceType.MOVIES;
         dataLoader.LoadData();
@@ -29,17 +45,33 @@ public class ForceDirLayout : GraphGenerator
         generate3DPoints();
         generateNodesAndLinks();
 
-        k = Mathf.Sqrt(W*L*D / (float)dataLoader.nodes.Length);
-        Debug.Log("K: " + k);
+        Debug.Log(Time.time.ToString("0.0"));
+
+       
+
     }
 	
 	// Update is called once per frame
 	void Update () {
+
         if( updateForceLayout )
         {
             recalcPositions();
-            updateLineEdges();
+            updateNodePositions();
+
+            if (Time.frameCount > maxFramesForLayout)
+            {
+                updateForceLayout = false;
+                Debug.Log("Stopped Force-Directed Layout");
+                Debug.Log(Time.time.ToString("0.0"));
+            }
         }
+
+        updateScale();
+        updateMove();
+        updateInfoBasedOnNodeMovementInWorld();
+
+        updateLineEdges();
     }
 
     public NodeInfo getNodeInfo(string nodeName)
@@ -110,27 +142,24 @@ public class ForceDirLayout : GraphGenerator
             innerInfo.dir += tVec;
         }
 
+
+
+
         Vector3 tPos;
         Vector3 gravDir;
-        float maxDist = 0.0f;
         foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
         {
             if (entry.Value.positionIsStationary) continue;
 
             gravDir = sphereCenter - entry.Value.pos3d;
             gravDir.Normalize();
-            tPos = entry.Value.pos3d + entry.Value.dir * C4 + gravDir*gravityAmt;
+            tPos = entry.Value.pos3d + entry.Value.dir * C4 + gravDir * gravityAmt;
 
             entry.Value.pos3d = tPos;
-            entry.Value.nodeObj.transform.position = tPos;
 
             gravDir = sphereCenter - entry.Value.pos3d;
             dist = gravDir.magnitude;
-            if (dist > maxDist) maxDist = dist;
         }
-
-        maxDistFromCenter = maxDist;
-
     }
 
     void generate3DPoints()
@@ -194,34 +223,6 @@ public class ForceDirLayout : GraphGenerator
 
     }
 
-    void updateLineEdges()
-    {
-        if (!drawEdges) return;
-
-        Vector3 startPt, endPt;
-        NodeInfo startInfo, endInfo;
-        float sphereCircumference = 2.0f * Mathf.PI * sphereRadius;
-
-        Vector3[] pts = new Vector3[1];
-
-        foreach (LinkInfo link in linkList)
-        {
-            startInfo = link.start;
-            endInfo = link.end;
-
-            startPt = startInfo.pos3d;
-            endPt = endInfo.pos3d;
-
-            pts = new Vector3[2];
-            pts[0] = startPt;
-            pts[1] = endPt;
-
-            GameObject lineObj = link.lineObj;
-            LineRenderer rend = lineObj.GetComponent<LineRenderer>();
-            rend.SetPositions(pts);
-        }
-    }
-
     void generateNodesAndLinks()
     {
         Vector3 graphCenter = Vector3.zero;
@@ -232,9 +233,11 @@ public class ForceDirLayout : GraphGenerator
 
         foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
         {
+            entry.Value.interState = NodeInteractionState.NONE;
+
             GameObject point = (GameObject)Instantiate(nodeObject);
             point.name = entry.Value.id;
-            point.transform.position = entry.Value.pos3d;
+            point.transform.localPosition = entry.Value.pos3d;
             point.transform.localScale = new Vector3(0.03f, 0.03f, 0.03f);
             entry.Value.nodeObj = point;
 
@@ -259,6 +262,8 @@ public class ForceDirLayout : GraphGenerator
             textMesh.color = entry.Value.color;
             textMesh.characterSize = 0.1f;
             textMesh.fontSize = 100;
+
+            point.transform.SetParent(gameObject.transform);
 
         }
 
@@ -289,11 +294,200 @@ public class ForceDirLayout : GraphGenerator
             rend.SetWidth(edgeThickness, edgeThickness);
             rend.SetVertexCount(pts.Length);
             rend.SetPositions(pts);
-            rend.SetColors(startInfo.color, endInfo.color);
 
+            rend.SetColors(startInfo.color * 0.5f, endInfo.color * 0.5f);
+            
             link.lineObj = lineObj;
         }
 
     }
 
+
+    void updateNodePositions()
+    {
+        foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
+        {
+            entry.Value.nodeObj.transform.position = entry.Value.pos3d;
+        }
+
+    }
+
+    void updateLineEdges()
+    {
+        if (!drawEdges) return;
+
+        NodeInfo startInfo, endInfo;
+        float sphereCircumference = 2.0f * Mathf.PI * sphereRadius;
+
+        Vector3[] pts = new Vector3[1];
+
+        NodeInteractionState maxState;
+
+        foreach (LinkInfo link in linkList)
+        {
+            startInfo = link.start;
+            endInfo = link.end;
+
+            if (startInfo.interState > endInfo.interState) maxState = startInfo.interState;
+            else maxState = endInfo.interState;
+
+            pts = new Vector3[2];
+            pts[0] = startInfo.nodeObj.transform.position;
+            pts[1] = endInfo.nodeObj.transform.position;
+
+            GameObject lineObj = link.lineObj;
+            LineRenderer rend = lineObj.GetComponent<LineRenderer>();
+            rend.SetPositions(pts);
+
+            switch (numHighlighed)
+            {
+                case 0:
+                    switch (maxState)
+                    {
+                        case NodeInteractionState.SELECTED:
+                            rend.SetColors(startInfo.color * 0.75f, endInfo.color * 0.75f);
+                            break;
+                        default:
+                            rend.SetColors(startInfo.color * 0.5f, endInfo.color * 0.5f);
+                            break;
+                    }
+                    break;
+                default:
+                    switch (maxState)
+                    {
+                        case NodeInteractionState.HIGHLIGHTED:
+                            rend.SetColors(startInfo.color * 0.95f, endInfo.color * 0.95f);
+                            break;
+                        case NodeInteractionState.SELECTED:
+                            rend.SetColors(startInfo.color * 0.75f, endInfo.color * 0.75f);
+                            break;
+                        default:
+                            rend.SetColors(startInfo.color * 0.35f, endInfo.color * 0.35f);
+                            break;
+                    }
+                    break;
+            }
+
+        }
+    }
+
+    public void rotateGraphHorizontal(float angle)
+    {
+        gameObject.transform.localRotation = Quaternion.Euler(new Vector3(0.0f, angle, 0.0f)) * gameObject.transform.localRotation;
+    }
+
+    public void rotateGraphVertical(float angle)
+    {
+        gameObject.transform.localRotation = Quaternion.Euler(new Vector3(angle, 0.0f, 0.0f)) * gameObject.transform.localRotation;
+    }
+
+
+
+
+
+
+    public void grabSphereWithObject(GameObject obj)
+    {
+        ForceDirTrackedObject fdto = obj.GetComponent<ForceDirTrackedObject>();
+
+        if (grabObject1 == fdto || grabObject2 == fdto) return;
+
+        if (grabObject1 == null)
+        {
+            grabObject1 = fdto;
+            activeGrabObject = grabObject1;
+        }
+        else if (grabObject2 == null)
+        {
+            grabObject2 = fdto;
+            activeGrabObject = grabObject2;
+        }
+
+        if (grabObject1 != null && grabObject2 != null)
+        {
+
+            initialScale = gameObject.transform.localScale;
+            Vector3 tVec = grabObject1.transform.position - grabObject2.transform.position;
+            initialDist = tVec.magnitude;
+            activeScale = true;
+            activeMove = false;
+        }
+        else
+        {
+            //initialRotation = Quaternion.Inverse(gameObject.transform.rotation) * activeGrabObject.currRotation;
+            initialRotation = Quaternion.Inverse(activeGrabObject.transform.rotation) * gameObject.transform.rotation;
+            Vector3 tmpVec = gameObject.transform.position - activeGrabObject.transform.position;
+
+            Transform t = activeGrabObject.transform;
+
+            inititalOffset.Set(
+                Vector3.Dot(t.up, tmpVec),
+                Vector3.Dot(t.right, tmpVec),
+                Vector3.Dot(t.forward, tmpVec)
+                );
+            activeMove = true;
+            activeScale = false;
+        }
+
+    }
+
+    public void releaseSphereWithObject(GameObject obj)
+    {
+        ForceDirTrackedObject fdto = obj.GetComponent<ForceDirTrackedObject>();
+
+        if (fdto == null) return;
+
+        if (grabObject1 == fdto)
+        {
+            grabObject1 = null;
+            activeScale = false;
+
+            if (grabObject2 == null) activeMove = false;
+        }
+
+        else if (grabObject2 == fdto)
+        {
+            grabObject2 = null;
+            activeScale = false;
+            if (grabObject1 == null) activeMove = false;
+
+        }
+
+    }
+
+    void updateMove()
+    {
+        if (activeMove)
+        {
+            gameObject.transform.rotation = activeGrabObject.transform.rotation * initialRotation;
+
+            gameObject.transform.position = activeGrabObject.deviceRay.origin +
+                inititalOffset.x * activeGrabObject.transform.up +
+                inititalOffset.y * activeGrabObject.transform.right +
+                inititalOffset.z * activeGrabObject.transform.forward;
+        }
+    }
+
+    void updateScale()
+    {
+        if (activeScale)
+        {
+            Vector3 tVec = grabObject1.transform.position - grabObject2.transform.position;
+
+            float scale = tVec.magnitude / initialDist;
+
+            gameObject.transform.localScale = initialScale * scale;
+        }
+    }
+
+    void updateInfoBasedOnNodeMovementInWorld()
+    {
+        if(activeScale || activeMove)
+        {
+            foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
+            {
+                entry.Value.pos3d = entry.Value.nodeObj.transform.position;
+            }
+        }
+    }
 }
