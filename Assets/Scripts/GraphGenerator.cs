@@ -47,7 +47,8 @@ public class GraphGenerator : MonoBehaviour {
 
     protected Dictionary<string, NodeInfo> nodeMap;
     protected List<LinkInfo> linkList;
-
+    protected Dictionary<string, List<NodeInfo>> groupMap;
+    protected Dictionary<string, GameObject> groupLabelMap;
 
     string[] outlierNames = {
         "From Hell",
@@ -61,7 +62,7 @@ public class GraphGenerator : MonoBehaviour {
 
         NodeLinkDataLoader dataLoader = new NodeLinkDataLoader();
         dataLoader.srcType = graphType;
-        dataLoader.LoadData();
+        dataLoader.LoadNodeLinkData();
         populateMaps(dataLoader);
         generate3DPoints();
         generateNodesAndLinks();
@@ -78,25 +79,35 @@ public class GraphGenerator : MonoBehaviour {
     {
         nodeMap = new Dictionary<string, NodeInfo>();
         linkList = new List<LinkInfo>();
+        groupMap = new Dictionary<string, List<NodeInfo> >();
 
         Color[] palette = ColorUtils.getColorPalette();
+        ColorUtils.randomizeColorPalette(palette);
 
         Dictionary<int, int> colorSet = new Dictionary<int, int>();
         int currGroup;
 
         NodeInfo currNode;
+        List<NodeInfo> currGrpList;
         foreach (NLNode node in dataLoader.nodes)
         {
             currNode = new NodeInfo();
             currNode.id = node.id;
-
             currNode.group = node.group;
-
+            currNode.groupId = node.groupId;
             currNode.color = palette[currNode.group % palette.Length];
 
             nodeMap.Add(node.id, currNode);
 
-            if( !colorSet.TryGetValue(currNode.group, out currGroup))
+            if(!groupMap.TryGetValue(currNode.groupId, out currGrpList ) )
+            {
+                currGrpList = new List<NodeInfo>();
+                groupMap.Add(currNode.groupId, currGrpList);
+            }
+
+            currGrpList.Add(currNode);
+
+            if ( !colorSet.TryGetValue(currNode.group, out currGroup))
             {
                 colorSet.Add(currNode.group, 0);
             }
@@ -122,6 +133,7 @@ public class GraphGenerator : MonoBehaviour {
                 currLink = new LinkInfo();
                 currLink.start = startNode;
                 currLink.end = endNode;
+                currLink.lineWidth = link.lineWidth;
                 linkList.Add(currLink);
             }
         }
@@ -314,8 +326,6 @@ public class GraphGenerator : MonoBehaviour {
             }
         }
 
-        if(!drawEdges) return;
-
         Vector3 startPt, endPt;
         NodeInfo startInfo, endInfo;
         float sphereCircumference = 2.0f * Mathf.PI * sphereRadius;
@@ -423,11 +433,7 @@ public class GraphGenerator : MonoBehaviour {
                 {
                     pts[i] = pts[i] * cylinderRadius + currHeight;
                     currHeight.y += heighIncrement;
-                }
-
-
-
-                
+                } 
             }
 
             GameObject lineObj = new GameObject();
@@ -440,8 +446,6 @@ public class GraphGenerator : MonoBehaviour {
             rend.SetColors(startInfo.color, endInfo.color);
 
         }
-        
-
 
 
     }
@@ -504,6 +508,7 @@ public class NodeInfo
 {
     public string id;
     public int group;
+    public string groupId;
     public Vector2 pos2d;
     public Vector3 pos3d;
     public GameObject nodeObj;
@@ -511,11 +516,13 @@ public class NodeInfo
     public Vector3 dir;
     public bool positionIsStationary = false;
     public NodeInteractionState interState;
+    public NodeInteractionState prevInterState;
 }
 
 public class LinkInfo
 {
     public NodeInfo start;
     public NodeInfo end;
+    public float lineWidth;
     public GameObject lineObj;
 }

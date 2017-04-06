@@ -9,18 +9,20 @@ Shader "UnityLibrary/Effects/WireframeShader"
 	{
 		_LineColor("LineColor", Color) = (1,1,1,1)
 		_FillColor("FillColor", Color) = (0,0,0,0)
-		_WireThickness("Wire Thickness", RANGE(0, 800)) = 100
+		_WireThickness("Wire Thickness", RANGE(0, 2000)) = 100
 		[MaterialToggle] UseDiscard("Discard Fill", Float) = 1
 	}
 
 		SubShader
 	{
-		Tags{ "RenderType" = "Opaque" }
+		Tags{ "Queue" = "Transparent"  "RenderType" = "Transparent" }
 
 		Pass
 	{
 		// Wireframe shader based on the the following
 		// http://developer.download.nvidia.com/SDK/10/direct3d/Source/SolidWireframe/Doc/SolidWireframe.pdf
+
+		Blend SrcAlpha OneMinusSrcAlpha
 
 		CGPROGRAM
 #pragma vertex vert
@@ -78,7 +80,7 @@ Shader "UnityLibrary/Effects/WireframeShader"
 		// divided by 2.  However we can avoid dividing our area/base by 2
 		// since our cross product will already be double our area.
 		float area = abs(edge1.x * edge2.y - edge1.y * edge2.x);
-		float wireThickness = 800 - _WireThickness;
+		float wireThickness = 2000 - _WireThickness;
 
 		g2f o;
 		o.worldSpacePosition = i[0].worldSpacePosition;

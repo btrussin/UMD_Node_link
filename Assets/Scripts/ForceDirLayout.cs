@@ -34,32 +34,51 @@ public class ForceDirLayout : GraphGenerator
     bool activeScale = false;
     bool activeMove = false;
 
+    float edgeBrightness_selected = 0.75f;
+    float edgeBrightness_highlighted = 0.95f;
+    float edgeBrightness_none = 0.0f;   // 0.5 (orig)
+    float edgeBrightness_dimmed = 0.0f;    // 0.35 (orig)
+
+    float nodeBrightness_selected = 0.75f;
+    float nodeBrightness_highlighted = 0.95f;
+    float nodeBrightness_none = 0.5f;
+    float nodeBrightness_dimmed = 0.35f;
+
+    public GameObject leftController;
+    public GameObject rightController;
+
+    ForceDirTrackedObject leftContManager;
+    ForceDirTrackedObject rightContManager;
+
     // Use this for initialization
     void Start () {
+
         sphereCenter = gameObject.transform.position;
 
         NodeLinkDataLoader dataLoader = new NodeLinkDataLoader();
         dataLoader.srcType = DataSourceType.MOVIES;
-        dataLoader.LoadData();
+        //dataLoader.LoadNodeLinkData();
+        dataLoader.LoadRawData();
         populateMaps(dataLoader);
         generate3DPoints();
         generateNodesAndLinks();
 
-        Debug.Log(Time.time.ToString("0.0"));
-
-       
+        if (leftController != null) leftContManager = leftController.GetComponent<ForceDirTrackedObject>();
+        if (rightController != null) rightContManager = rightController.GetComponent<ForceDirTrackedObject>();
 
     }
 	
 	// Update is called once per frame
 	void Update () {
 
-        if( updateForceLayout )
+        sphereCenter = gameObject.transform.position;
+
+        if ( updateForceLayout )
         {
             recalcPositions();
             updateNodePositions();
-
-            if (Time.frameCount > maxFramesForLayout)
+ 
+            if (Time.frameCount == maxFramesForLayout)
             {
                 updateForceLayout = false;
                 Debug.Log("Stopped Force-Directed Layout");
@@ -114,7 +133,8 @@ public class ForceDirLayout : GraphGenerator
 
                 innerInfo = innerEntry.Value;
 
-                tVec = outerInfo.pos3d - innerInfo.pos3d;
+                //tVec = outerInfo.pos3d - innerInfo.pos3d;
+                tVec = outerInfo.nodeObj.transform.position - innerInfo.nodeObj.transform.position;
                 if (tVec.sqrMagnitude == 0.0f) tVec = new Vector3(1.0f, 1.0f, 1.0f);
 
                 dist = tVec.magnitude;
@@ -130,7 +150,8 @@ public class ForceDirLayout : GraphGenerator
             innerInfo = link.end;
 
             // dir from inner to outer
-            tVec = outerInfo.pos3d - innerInfo.pos3d;
+            //tVec = outerInfo.pos3d - innerInfo.pos3d;
+            tVec = outerInfo.nodeObj.transform.position - innerInfo.nodeObj.transform.position;
 
             if (tVec.sqrMagnitude == 0.0f) tVec = new Vector3(0.01f, 0.01f, 1.01f);
 
@@ -151,13 +172,17 @@ public class ForceDirLayout : GraphGenerator
         {
             if (entry.Value.positionIsStationary) continue;
 
-            gravDir = sphereCenter - entry.Value.pos3d;
+            //gravDir = sphereCenter - entry.Value.pos3d;
+            gravDir = sphereCenter - entry.Value.nodeObj.transform.position;
             gravDir.Normalize();
-            tPos = entry.Value.pos3d + entry.Value.dir * C4 + gravDir * gravityAmt;
+            //tPos = entry.Value.pos3d + entry.Value.dir * C4 + gravDir * gravityAmt;
+            tPos = entry.Value.nodeObj.transform.position + entry.Value.dir * C4 + gravDir * gravityAmt;
 
             entry.Value.pos3d = tPos;
+            entry.Value.nodeObj.transform.position = tPos;
 
-            gravDir = sphereCenter - entry.Value.pos3d;
+            //gravDir = sphereCenter - entry.Value.pos3d;
+            gravDir = sphereCenter - tPos;
             dist = gravDir.magnitude;
         }
     }
@@ -234,6 +259,7 @@ public class ForceDirLayout : GraphGenerator
         foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
         {
             entry.Value.interState = NodeInteractionState.NONE;
+            entry.Value.prevInterState = NodeInteractionState.NONE;
 
             GameObject point = (GameObject)Instantiate(nodeObject);
             point.name = entry.Value.id;
@@ -267,8 +293,6 @@ public class ForceDirLayout : GraphGenerator
 
         }
 
-        if (!drawEdges) return;
-
         Vector3 startPt, endPt;
         NodeInfo startInfo, endInfo;
         float sphereCircumference = 2.0f * Mathf.PI * sphereRadius;
@@ -291,25 +315,154 @@ public class ForceDirLayout : GraphGenerator
             lineObj.AddComponent<LineRenderer>();
             LineRenderer rend = lineObj.GetComponent<LineRenderer>();
             rend.material = lineMaterial;
-            rend.SetWidth(edgeThickness, edgeThickness);
+            rend.SetWidth(link.lineWidth, link.lineWidth);
             rend.SetVertexCount(pts.Length);
             rend.SetPositions(pts);
 
-            rend.SetColors(startInfo.color * 0.5f, endInfo.color * 0.5f);
+            rend.SetColors(startInfo.color * 0.0f, endInfo.color * 0.0f);
             
             link.lineObj = lineObj;
+        }
+
+
+
+        groupLabelMap = new Dictionary<string, GameObject>();
+
+        foreach (KeyValuePair<string, List<NodeInfo>> kvPair in groupMap)
+        {
+            GameObject nodeLabel = new GameObject();
+            nodeLabel.name = kvPair.Key + " [label]";
+            nodeLabel.AddComponent<MeshRenderer>();
+            nodeLabel.AddComponent<TextMesh>();
+            nodeLabel.AddComponent<CameraOriented>();
+
+            TextMesh textMesh = nodeLabel.GetComponent<TextMesh>();
+            textMesh.anchor = TextAnchor.LowerCenter;
+            textMesh.alignment = TextAlignment.Center;
+            textMesh.text = kvPair.Key;
+            //textMesh.color = Color.red;
+            textMesh.characterSize = 0.01f;
+            textMesh.fontSize = 100;
+
+           
+            foreach(NodeInfo ni in kvPair.Value)
+            {
+                textMesh.color = ni.color;
+                break;
+            }
+
+            groupLabelMap.Add(kvPair.Key, nodeLabel);
+
         }
 
     }
 
 
+    
+
     void updateNodePositions()
     {
-        foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
+        int highlightGrpLt = -1;
+        int highlightGrpRt = -1;
+
+        switch (numHighlighed)
         {
-            entry.Value.nodeObj.transform.position = entry.Value.pos3d;
+            case 0:
+                foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
+                {
+                    entry.Value.nodeObj.transform.position = entry.Value.pos3d;
+
+                    MeshRenderer rend = entry.Value.nodeObj.GetComponent<MeshRenderer>();
+
+                    switch (entry.Value.interState)
+                    {
+                        case NodeInteractionState.SELECTED:
+                            rend.material.color = entry.Value.color * nodeBrightness_selected;
+                            break;
+                        default:
+                            rend.material.color = entry.Value.color * nodeBrightness_none;
+                            break;
+                    }
+
+                }
+                break;
+
+            default:
+
+                highlightGrpLt = leftContManager.highlightGrp;
+                highlightGrpRt = rightContManager.highlightGrp;
+
+                foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
+                {
+                    entry.Value.nodeObj.transform.position = entry.Value.pos3d;
+
+                    MeshRenderer rend = entry.Value.nodeObj.GetComponent<MeshRenderer>();
+
+                    if(entry.Value.group == highlightGrpLt || entry.Value.group == highlightGrpRt)
+                    {
+                        rend.material.color = entry.Value.color * nodeBrightness_highlighted;
+                    }
+                    else if(entry.Value.interState == NodeInteractionState.SELECTED)
+                    {
+                        rend.material.color = entry.Value.color * nodeBrightness_selected;
+                    }
+                    else
+                    {
+                        rend.material.color = entry.Value.color * nodeBrightness_dimmed;
+                    }
+
+                }
+
+                break;
         }
 
+        updateGroupLabels();
+
+    }
+
+    void updateGroupLabels()
+    {
+        GameObject labelObj = null;
+        Vector3 averagePosition = Vector3.zero;
+        int numNodes = 0;
+        Vector3 offset = new Vector3(0.0f, 0.08f, 0.0f);
+        foreach (KeyValuePair<string, List<NodeInfo>> entry in groupMap)
+        {
+            averagePosition = Vector3.zero;
+            numNodes = 0;
+            foreach(NodeInfo info in entry.Value)
+            {
+                averagePosition += info.nodeObj.transform.position;
+                numNodes++;
+            }
+
+            averagePosition /= (float)numNodes;
+
+            float minDist = float.MaxValue;
+            float currDist;
+            GameObject closestObj = null;
+
+            Vector3 distVec;
+
+
+            foreach (NodeInfo info in entry.Value)
+            {
+                if( closestObj == null ) closestObj = info.nodeObj;
+
+                distVec = averagePosition - info.nodeObj.transform.position;
+                currDist = distVec.sqrMagnitude;
+                if( currDist+0.02f < minDist )
+                {
+                    minDist = currDist;
+                    closestObj = info.nodeObj;
+                }
+            }
+
+            groupLabelMap.TryGetValue(entry.Key, out labelObj);
+            labelObj.transform.SetParent(closestObj.transform);
+            labelObj.transform.position = closestObj.transform.position + offset;
+
+        }
     }
 
     void updateLineEdges()
@@ -345,10 +498,10 @@ public class ForceDirLayout : GraphGenerator
                     switch (maxState)
                     {
                         case NodeInteractionState.SELECTED:
-                            rend.SetColors(startInfo.color * 0.75f, endInfo.color * 0.75f);
+                            rend.SetColors(startInfo.color * edgeBrightness_selected, endInfo.color * edgeBrightness_selected);
                             break;
                         default:
-                            rend.SetColors(startInfo.color * 0.5f, endInfo.color * 0.5f);
+                            rend.SetColors(startInfo.color * edgeBrightness_none, endInfo.color * edgeBrightness_none);
                             break;
                     }
                     break;
@@ -356,13 +509,13 @@ public class ForceDirLayout : GraphGenerator
                     switch (maxState)
                     {
                         case NodeInteractionState.HIGHLIGHTED:
-                            rend.SetColors(startInfo.color * 0.95f, endInfo.color * 0.95f);
+                            rend.SetColors(startInfo.color * edgeBrightness_highlighted, endInfo.color * edgeBrightness_highlighted);
                             break;
                         case NodeInteractionState.SELECTED:
                             rend.SetColors(startInfo.color * 0.75f, endInfo.color * 0.75f);
                             break;
                         default:
-                            rend.SetColors(startInfo.color * 0.35f, endInfo.color * 0.35f);
+                            rend.SetColors(startInfo.color * edgeBrightness_dimmed, endInfo.color * edgeBrightness_dimmed);
                             break;
                     }
                     break;
@@ -373,12 +526,14 @@ public class ForceDirLayout : GraphGenerator
 
     public void rotateGraphHorizontal(float angle)
     {
-        gameObject.transform.localRotation = Quaternion.Euler(new Vector3(0.0f, angle, 0.0f)) * gameObject.transform.localRotation;
+        gameObject.transform.rotation = Quaternion.Euler(new Vector3(0.0f, angle, 0.0f)) * gameObject.transform.rotation;
+        //updateInfoBasedOnNodeMovementInWorld();
     }
 
     public void rotateGraphVertical(float angle)
     {
-        gameObject.transform.localRotation = Quaternion.Euler(new Vector3(angle, 0.0f, 0.0f)) * gameObject.transform.localRotation;
+        gameObject.transform.rotation = Quaternion.Euler(new Vector3(angle, 0.0f, 0.0f)) * gameObject.transform.rotation;
+        //updateInfoBasedOnNodeMovementInWorld();
     }
 
 
@@ -482,12 +637,9 @@ public class ForceDirLayout : GraphGenerator
 
     void updateInfoBasedOnNodeMovementInWorld()
     {
-        if(activeScale || activeMove)
+        foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
         {
-            foreach (KeyValuePair<string, NodeInfo> entry in nodeMap)
-            {
-                entry.Value.pos3d = entry.Value.nodeObj.transform.position;
-            }
+            entry.Value.pos3d = entry.Value.nodeObj.transform.position;
         }
     }
 }

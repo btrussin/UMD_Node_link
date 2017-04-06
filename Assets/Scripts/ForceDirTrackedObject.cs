@@ -11,6 +11,7 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
 
     public GameObject menuObject;
     public bool menuActive = false;
+    public bool usePointers = false;
 
     public GameObject sliderLeftPnt;
     public GameObject sliderRightPnt;
@@ -26,8 +27,12 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
     int menuSliderMask;
 
     GameObject currNodeSelected = null;
-    bool updateNodePosition = false;
+    GameObject currNodeCollided = null;
+    bool updateNodeSelectedPosition = false;
+    bool updateNodeCollidedPosition = false;
     float nodePointDistance = 0.0f;
+
+    GameObject currNodeInContact = null;
 
     public GameObject beam;
     bool castBeamAnyway = false;
@@ -38,6 +43,8 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
 
     public GameObject forceDirLayoutObj;
     ForceDirLayout fDirScript;
+
+    public int highlightGrp = -1;
 
     // Use this for initialization
     void Start () {
@@ -71,16 +78,23 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
         {
             calcSliderPosition();
         }
-        else if( updateNodePosition )
+        else if( updateNodeSelectedPosition )
         {
             calcNodePosition();
+        }
+
+        if(updateNodeCollidedPosition)
+        {
+            Vector3 pt = transform.position + transform.forward * 0.05f;
+            currNodeCollided.transform.position = pt;
+            NodeInfo info = fDirScript.getNodeInfo(currNodeCollided.name);
+            info.pos3d = pt;
         }
 
     }
 
     void projectBeam()
     {
-
         float beamDist = 10.0f;
 
         beam.SetActive(false);
@@ -91,7 +105,7 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
             beam.SetActive(true);
             beamDist = sliderPointDistance;
         }
-        else if (updateNodePosition)
+        else if (usePointers && updateNodeSelectedPosition)
         {
             beam.SetActive(true);
             beamDist = nodePointDistance;
@@ -110,7 +124,7 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
             else updateSlider = false;
 
         }
-        else if (Physics.Raycast(deviceRay.origin, deviceRay.direction, out hitInfo, beamDist, nodeLayerMask))
+        else if (usePointers && Physics.Raycast(deviceRay.origin, deviceRay.direction, out hitInfo, beamDist, nodeLayerMask))
         {
             
             currNodeSelected = hitInfo.collider.gameObject;
@@ -119,7 +133,7 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
             if (triggerPulled)
             {
                 nodePointDistance = beamDist;
-                updateNodePosition = true;
+                updateNodeSelectedPosition = true;
             }
         }
         else if(castBeamAnyway)
@@ -155,6 +169,15 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
                 // just pulled the trigger
                 castBeamAnyway = true;
                 triggerPulled = true;
+
+                if( currNodeCollided != null )
+                {
+
+                    updateNodeCollidedPosition = true;
+                    currNodeCollided.GetComponentInChildren<Collider>().enabled = false;
+                    NodeInfo info = fDirScript.getNodeInfo(currNodeCollided.name);
+                    info.positionIsStationary = true;
+                }
             }
             else if ((state.ulButtonPressed & SteamVR_Controller.ButtonMask.Trigger) == 0 &&
                 (prevState.ulButtonPressed & SteamVR_Controller.ButtonMask.Trigger) != 0)
@@ -162,7 +185,7 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
                 // just released the trigger
                 castBeamAnyway = false;
                 updateSlider = false;
-                updateNodePosition = false;
+                updateNodeSelectedPosition = false;
                 triggerPulled = false;
 
                 if(currNodeSelected != null)
@@ -177,7 +200,27 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
 
                     currNodeSelected = null;
                 }
+
+                if (currNodeCollided != null)
+                {
+                    updateNodeCollidedPosition = false;
+                    currNodeCollided.GetComponentInChildren<Collider>().enabled = true;
+                    NodeInfo info = fDirScript.getNodeInfo(currNodeCollided.name);
+                    info.positionIsStationary = false;
+                }
             }
+
+            if(currNodeCollided != null)
+            {
+                if (prevState.rAxis1.x < 1.0f && state.rAxis1.x == 1.0f)
+                {
+                    // just pulled the trigger in all the way
+                    NodeInfo info = fDirScript.getNodeInfo(currNodeCollided.name);
+                    if( info.prevInterState == NodeInteractionState.SELECTED) info.prevInterState = NodeInteractionState.NONE;
+                    else info.prevInterState = NodeInteractionState.SELECTED;
+                }
+            }
+
 
             if ((state.ulButtonPressed & SteamVR_Controller.ButtonMask.Grip) != 0 &&
                 (prevState.ulButtonPressed & SteamVR_Controller.ButtonMask.Grip) == 0)
@@ -211,8 +254,6 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
             }
             
         }
-
-
     }
 
     void calcSliderPosition()
@@ -287,21 +328,23 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
         menuObject.SetActive(false);
     }
 
-
-
-
-
-
-
-
     
     void OnCollisionEnter(Collision col)
     {
         GameObject obj = col.gameObject;
         NodeInfo info = fDirScript.getNodeInfo(obj.name);
         if (info == null) return;
+        currNodeCollided = obj;
+        switch (info.interState)
+        {
+            case NodeInteractionState.NONE:
+            case NodeInteractionState.SELECTED:
+                info.prevInterState = info.interState;
+                break;
+        }
         info.interState = NodeInteractionState.HIGHLIGHTED;
         fDirScript.numHighlighed++;
+        highlightGrp = info.group;
     }
 
     void OnCollisionStay(Collision col)
@@ -314,8 +357,17 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
         GameObject obj = col.gameObject;
         NodeInfo info = fDirScript.getNodeInfo(obj.name);
         if (info == null) return;
-        info.interState = NodeInteractionState.NONE;
+        Debug.Log("Setting state to previous state for " + obj.name  + " to " + info.prevInterState);
+        info.interState = info.prevInterState;
         fDirScript.numHighlighed--;
+        highlightGrp = -1;
+
+
+
+        currNodeCollided = null;
+        updateNodeCollidedPosition = false;
+
+
     }
     
 }
