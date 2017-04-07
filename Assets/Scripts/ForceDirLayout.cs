@@ -34,15 +34,17 @@ public class ForceDirLayout : GraphGenerator
     bool activeScale = false;
     bool activeMove = false;
 
-    float edgeBrightness_selected = 0.75f;
-    float edgeBrightness_highlighted = 0.95f;
-    float edgeBrightness_none = 0.0f;   // 0.5 (orig)
-    float edgeBrightness_dimmed = 0.0f;    // 0.35 (orig)
+    bool alwaysShowLines = false;
 
-    float nodeBrightness_selected = 0.75f;
-    float nodeBrightness_highlighted = 0.95f;
-    float nodeBrightness_none = 0.5f;
-    float nodeBrightness_dimmed = 0.35f;
+    public float edgeBrightness_selected = 0.75f;
+    public float edgeBrightness_highlighted = 0.95f;
+    public float edgeBrightness_none = 0.0f;   // 0.5 (orig)
+    public float edgeBrightness_dimmed = 0.0f;    // 0.35 (orig)
+
+    public float nodeBrightness_selected = 0.75f;
+    public float nodeBrightness_highlighted = 0.95f;
+    public float nodeBrightness_none = 0.5f;
+    public float nodeBrightness_dimmed = 0.35f;
 
     public GameObject leftController;
     public GameObject rightController;
@@ -81,8 +83,6 @@ public class ForceDirLayout : GraphGenerator
             if (Time.frameCount == maxFramesForLayout)
             {
                 updateForceLayout = false;
-                Debug.Log("Stopped Force-Directed Layout");
-                Debug.Log(Time.time.ToString("0.0"));
             }
         }
 
@@ -641,5 +641,33 @@ public class ForceDirLayout : GraphGenerator
         {
             entry.Value.pos3d = entry.Value.nodeObj.transform.position;
         }
+    }
+
+    public bool getShowLines()
+    {
+        return alwaysShowLines;
+    }
+
+    public void toggleShowLines()
+    {
+        alwaysShowLines = !alwaysShowLines;
+
+        if( alwaysShowLines )
+        {
+            edgeBrightness_none = 0.5f;
+            edgeBrightness_dimmed = 0.35f;
+        }
+        else
+        {
+            edgeBrightness_none = 0.0f;
+            edgeBrightness_dimmed = 0.0f;
+        }
+
+        updateLineEdges();
+    }
+
+    public void toggleActiveForce()
+    {
+        updateForceLayout = !updateForceLayout;
     }
 }

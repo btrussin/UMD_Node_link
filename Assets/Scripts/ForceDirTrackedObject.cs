@@ -10,8 +10,9 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
     ForceDirTrackedObject otherTrackedObjScript;
 
     public GameObject menuObject;
+    GameObject currMenuSubObject = null;
+    MenuManager menuManager;
     public bool menuActive = false;
-    public bool usePointers = false;
 
     public GameObject sliderLeftPnt;
     public GameObject sliderRightPnt;
@@ -50,6 +51,8 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
     void Start () {
         vrSystem = OpenVR.System;
 
+        menuManager = menuObject.GetComponent<MenuManager>();
+
         menuSliderMask = 1 << LayerMask.NameToLayer("MenuSlider");
         nodeLayerMask = 1 << LayerMask.NameToLayer("NodeLayer");
         beam.SetActive(false);
@@ -75,8 +78,10 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
 
 
         if (updateSlider)
-        {
-            calcSliderPosition();
+        { 
+            // get proposted position of the slider point in world space
+            Vector3 tVec = deviceRay.GetPoint(sliderPointDistance);
+            menuManager.calcSliderPosition(tVec);
         }
         else if( updateNodeSelectedPosition )
         {
@@ -105,7 +110,7 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
             beam.SetActive(true);
             beamDist = sliderPointDistance;
         }
-        else if (usePointers && updateNodeSelectedPosition)
+        else if (menuManager.useNodePointers && updateNodeSelectedPosition)
         {
             beam.SetActive(true);
             beamDist = nodePointDistance;
@@ -116,6 +121,8 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
             beamDist = hitInfo.distance;
             beam.SetActive(true);
 
+            currMenuSubObject = obj;
+
             if (triggerPulled && obj.name.Equals("Quad_Slider_Point"))
             {
                 sliderPointDistance = beamDist;
@@ -124,7 +131,7 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
             else updateSlider = false;
 
         }
-        else if (usePointers && Physics.Raycast(deviceRay.origin, deviceRay.direction, out hitInfo, beamDist, nodeLayerMask))
+        else if (menuManager.useNodePointers && Physics.Raycast(deviceRay.origin, deviceRay.direction, out hitInfo, beamDist, nodeLayerMask))
         {
             
             currNodeSelected = hitInfo.collider.gameObject;
@@ -139,6 +146,8 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
         else if(castBeamAnyway)
         {
             beam.SetActive(true);
+            currMenuSubObject = null;
+            currNodeSelected = null;
         }
 
         LineRenderer lineRend = beam.GetComponent<LineRenderer>();
@@ -210,15 +219,22 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
                 }
             }
 
-            if(currNodeCollided != null)
+            if (prevState.rAxis1.x < 1.0f && state.rAxis1.x == 1.0f)
             {
-                if (prevState.rAxis1.x < 1.0f && state.rAxis1.x == 1.0f)
+                // just pulled the trigger in all the way
+                if (currNodeCollided != null)
                 {
-                    // just pulled the trigger in all the way
                     NodeInfo info = fDirScript.getNodeInfo(currNodeCollided.name);
-                    if( info.prevInterState == NodeInteractionState.SELECTED) info.prevInterState = NodeInteractionState.NONE;
+                    if (info.prevInterState == NodeInteractionState.SELECTED) info.prevInterState = NodeInteractionState.NONE;
                     else info.prevInterState = NodeInteractionState.SELECTED;
                 }
+                else if(currMenuSubObject != null)
+                {
+                    if (currMenuSubObject.name.Equals("ForceBox")) menuManager.toggleForce();
+                    else if (currMenuSubObject.name.Equals("ShowLinesBox")) menuManager.toggleShowLines();
+                    else if (currMenuSubObject.name.Equals("NodePointerBox")) menuManager.toggleNodePointers();
+                }
+                    
             }
 
 
@@ -256,36 +272,6 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
         }
     }
 
-    void calcSliderPosition()
-    {
-        // get proposted position of the slider point in world space
-        Vector3 tVec = deviceRay.GetPoint(sliderPointDistance);
-
-        // project that point onto the world positions of the slider ends
-        Vector3 v1 = sliderRightPnt.transform.position - sliderLeftPnt.transform.position;
-        Vector3 v2 = tVec - sliderLeftPnt.transform.position;
-
-        // 'd' is the vector-projection amount of v2 onto v1
-        float d = Vector3.Dot(v1, v2) / Vector3.Dot(v1, v1);
-
-        // 'd' is also the correct linear combination of the left and right slider edges
-        // left * d + right * ( 1 - d )
-        setSliderLocalPosition(d);
-    }
-
-    void setSliderLocalPosition(float dist)
-    {
-        // clamp dist to 0.0 and 1.0
-        // float tDist = Mathf.Min(1.0f, Mathf.Max(0.0f, dist));
-        float tDist = Mathf.Clamp(dist, 0.0f, 1.0f);
-        Vector3 tVec = (sliderRightPnt.transform.localPosition - sliderLeftPnt.transform.localPosition) * tDist;
-        sliderPoint.transform.localPosition = sliderLeftPnt.transform.localPosition + tVec;
-
-        //fDirScript.gravityAmt = 0.04f * tDist;  // linear
-        fDirScript.gravityAmt = 0.04f * tDist * tDist;  // quad
-    }
-
-
     void calcNodePosition()
     {
         Vector3 pos = deviceRay.GetPoint(nodePointDistance);
@@ -320,6 +306,8 @@ public class ForceDirTrackedObject : SteamVR_TrackedObject
         menuObject.transform.localScale = new Vector3(0.25f, 0.25f, 1.0f);
 
         menuObject.SetActive(true);
+
+        menuManager.updateInterface();
     }
 
     public void hideMainMenu()
