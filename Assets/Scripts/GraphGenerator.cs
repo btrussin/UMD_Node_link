@@ -125,7 +125,11 @@ public class GraphGenerator : MonoBehaviour {
         NodeInfo endNode;
         LinkInfo currLink;
 
-        foreach( NLLink link in dataLoader.links )
+       
+
+        Random.InitState(97);
+
+        foreach ( NLLink link in dataLoader.links )
         {
             if (nodeMap.TryGetValue(link.source, out startNode) &&
                nodeMap.TryGetValue(link.target, out endNode))
@@ -134,6 +138,7 @@ public class GraphGenerator : MonoBehaviour {
                 currLink.start = startNode;
                 currLink.end = endNode;
                 currLink.lineWidth = link.lineWidth;
+                currLink.forceValue = Mathf.Sqrt((float)link.value) + Random.value * 0.5f;
                 linkList.Add(currLink);
             }
         }
@@ -525,4 +530,5 @@ public class LinkInfo
     public NodeInfo end;
     public float lineWidth;
     public GameObject lineObj;
+    public float forceValue;
 }

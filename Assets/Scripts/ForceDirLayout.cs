@@ -157,7 +157,7 @@ public class ForceDirLayout : GraphGenerator
 
             dist = tVec.magnitude;
 
-            tVec = tVec / dist * attractForce(dist);
+            tVec = tVec / dist * attractForce(dist) * link.forceValue;
 
             outerInfo.dir -= tVec;
             innerInfo.dir += tVec;
